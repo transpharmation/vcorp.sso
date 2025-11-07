@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "pytest"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vcorp.sso"
+version = "0.2.1"
+description = "SSO support pyramid integration package used to set authentication and authorization policy"
+authors = [
+    { name = "Dan Milgram", email = "danm@vivocore.com" }
+]
+license = { text = "Commercial" }
+keywords = ["system", "reporting"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Commercial License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "pyramid",
+    "PyJWT>=2.0.1"
+]
+
+[project.optional-dependencies]
+tests = ["pytest", "webtest"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vcorp.sso*"]

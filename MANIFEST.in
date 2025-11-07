@@ -1,0 +1,2 @@
+include docs *.txt *.ini *.cfg *.rst
+recursive-include vcorp/hr *.pt *.sql *.jinja2
