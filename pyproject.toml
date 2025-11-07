@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vcorp.sso"
-version = "0.2.1"
+version = "0.2.2"
 description = "SSO support pyramid integration package used to set authentication and authorization policy"
 authors = [
     { name = "Dan Milgram", email = "danm@vivocore.com" }
