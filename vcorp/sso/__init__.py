@@ -1,4 +1,5 @@
 from pyramid.exceptions import ConfigurationError
+from pyramid.settings import aslist
 from .policy import JWTAuthenticationPolicy, KeycloakAuthenticationPolicy
 
 
@@ -139,12 +140,17 @@ def set_keycloak_authentication_policy(config):
             "Set keycloak.issuer (or multiauth.policy.keycloak.issuer) to the Keycloak "
             "realm URL, e.g. https://sso.example.com/realms/master"
         )
-    policy = KeycloakAuthenticationPolicy(
-        issuer,
-        audience=resource or None,
-        leeway=int(settings.get("jwt.leeway", 0)),
-        callback=add_role_principals,
-    )
+    algorithms = aslist(settings.get("keycloak.algorithms", ""))
+    try:
+        policy = KeycloakAuthenticationPolicy(
+            issuer,
+            audience=resource or None,
+            leeway=int(settings.get("jwt.leeway", 0)),
+            callback=add_role_principals,
+            algorithms=algorithms or None,
+        )
+    except ValueError as e:
+        raise ConfigurationError(f"keycloak.algorithms: {e}") from e
 
     def request_claims(request):
         return policy.get_claims(request)

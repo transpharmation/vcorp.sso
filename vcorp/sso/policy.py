@@ -1,8 +1,11 @@
 import datetime
 import logging
+import threading
+import time
 import warnings
 import jwt
 from jwt import PyJWKClient
+from jwt.algorithms import get_default_algorithms
 from zope.interface import implementer
 from pyramid.authentication import CallbackAuthenticationPolicy
 from pyramid.interfaces import IAuthenticationPolicy
@@ -10,6 +13,18 @@ from pyramid.interfaces import IAuthenticationPolicy
 
 log = logging.getLogger("pyramid_jwt")
 marker = []
+
+
+def verification_key(private_key, algorithm):
+    """Return the key that verifies tokens signed with ``private_key``.
+
+    A shared secret verifies its own tokens; an asymmetric private key is verified by
+    its public half.
+    """
+    if private_key is None or algorithm.startswith("HS"):
+        return private_key
+    key = get_default_algorithms()[algorithm].prepare_key(private_key)
+    return key.public_key() if hasattr(key, "public_key") else key
 
 
 @implementer(IAuthenticationPolicy)
@@ -29,7 +44,11 @@ class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
         audience=None,
     ):
         self.private_key = private_key
-        self.public_key = public_key if public_key is not None else private_key
+        self.public_key = (
+            public_key
+            if public_key is not None
+            else verification_key(private_key, algorithm)
+        )
         self.algorithm = algorithm
         self.leeway = leeway
         self.default_claims = default_claims if default_claims else {}
@@ -132,40 +151,92 @@ class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
 class KeycloakAuthenticationPolicy(JWTAuthenticationPolicy):
     """Accepts bearer tokens issued and signed by a Keycloak realm.
 
-    A token is verified against the keys the realm publishes, and must not be expired
-    and must name the realm as its issuer (and ``audience``, when one is set). A token
-    that can't be verified, including when the keys can't be fetched, authenticates
-    nobody.
+    A token is verified against the keys the realm publishes, and must be signed with
+    one of ``algorithms``, not be expired and name the realm as its issuer (and
+    ``audience``, when one is set). A token that can't be verified, including when the
+    keys can't be fetched, authenticates nobody.
+
+    The realm's keys are re-fetched every ``keys_lifespan`` seconds, so a key the realm
+    removes stops being trusted. A token naming an unknown key triggers a re-fetch at
+    most once every ``min_refresh_interval`` seconds.
     """
 
     ALGORITHMS = ["RS256"]
 
     def __init__(
-        self, issuer, audience=None, leeway=0, callback=None, jwks_client=None
+        self,
+        issuer,
+        audience=None,
+        leeway=0,
+        callback=None,
+        jwks_client=None,
+        algorithms=None,
+        keys_lifespan=300,
+        min_refresh_interval=60,
     ):
+        algorithms = list(algorithms or self.ALGORITHMS)
+        for algorithm in algorithms:
+            if algorithm == "none" or algorithm.startswith("HS"):
+                raise ValueError(f"{algorithm} is not an asymmetric signing algorithm")
         super().__init__(
             None,
-            algorithm="RS256",
+            algorithm=algorithms[0],
             leeway=leeway,
             http_header="Authorization",
             auth_type="Bearer",
             callback=callback,
             audience=audience,
         )
+        self.algorithms = algorithms
         self.issuer = issuer.rstrip("/")
         self.jwks_client = jwks_client or PyJWKClient(
-            f"{self.issuer}/protocol/openid-connect/certs", cache_keys=True
+            f"{self.issuer}/protocol/openid-connect/certs",
+            cache_jwk_set=True,
+            lifespan=keys_lifespan,
         )
+        self.min_refresh_interval = min_refresh_interval
+        self._last_refresh = None
+        self._refresh_lock = threading.Lock()
 
     def create_token(self, principal, expiration=None, audience=None, **claims):
         raise NotImplementedError("Keycloak issues the tokens this policy accepts")
 
+    def signing_key(self, token):
+        """Return the realm's public key that signed ``token``.
+
+        Raises:
+            jwt.PyJWTError: If the realm publishes no such key.
+        """
+        kid = jwt.get_unverified_header(token).get("kid")
+        key = self._find_key(self.jwks_client.get_signing_keys(), kid)
+        if key is None and self._may_refresh():
+            key = self._find_key(self.jwks_client.get_signing_keys(refresh=True), kid)
+        if key is None:
+            raise jwt.PyJWKClientError(
+                f'Unable to find a signing key that matches: "{kid}"'
+            )
+        return key.key
+
+    @staticmethod
+    def _find_key(keys, kid):
+        return next((key for key in keys if key.key_id == kid), None)
+
+    def _may_refresh(self):
+        with self._refresh_lock:
+            now = time.monotonic()
+            if (
+                self._last_refresh is not None
+                and now - self._last_refresh < self.min_refresh_interval
+            ):
+                return False
+            self._last_refresh = now
+            return True
+
     def decode(self, token):
-        key = self.jwks_client.get_signing_key_from_jwt(token).key
         return jwt.decode(
             token,
-            key,
-            algorithms=self.ALGORITHMS,
+            self.signing_key(token),
+            algorithms=self.algorithms,
             issuer=self.issuer,
             leeway=self.leeway,
             audience=self.audience,
