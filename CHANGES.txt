@@ -1,3 +1,16 @@
+0.3.0
+
+- Requires PyJWT[crypto]>=2.15, whose key cache survives a failed refresh.
+- Keycloak authentication verifies tokens against the realm's published signing keys,
+  and checks expiry and issuer (and audience, when keycloak.resource is set).
+  Requires keycloak.issuer or multiauth.policy.keycloak.issuer.
+- keycloak.algorithms lists the realm's signing algorithms (default RS256);
+  shared-secret and unsigned algorithms are refused.
+- The realm's keys are re-fetched every 5 minutes, so removed keys stop being
+  trusted; a token naming an unknown key re-fetches them at most once a minute.
+- The shared-secret JWT policy verifies token signatures. With an asymmetric
+  algorithm and only jwt.private_key set, tokens are verified with its public key.
+
 0.1
 
 Initial Release

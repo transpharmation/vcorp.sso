@@ -1,48 +1,59 @@
-from pyramid.view import view_config
-from .policy import JWTAuthenticationPolicy
+from pyramid.exceptions import ConfigurationError
+from pyramid.settings import aslist
+from .policy import JWTAuthenticationPolicy, KeycloakAuthenticationPolicy
 
 
 def includeme(config):
     config.add_directive(
-        'set_jwt_authentication_policy',
-        set_jwt_authentication_policy,
-        action_wrap=True)
+        "set_jwt_authentication_policy", set_jwt_authentication_policy, action_wrap=True
+    )
     config.add_directive(
-        'set_keycloak_authentication_policy',
+        "set_keycloak_authentication_policy",
         set_keycloak_authentication_policy,
-        action_wrap=True)
+        action_wrap=True,
+    )
 
 
 def add_role_principals(userid, request):
     settings = request.registry.settings
     claims = request.jwt_claims
-    client = settings.get('keycloak.client', None)
+    client = settings.get("keycloak.client", None)
     # Initialize with an "Owner" role
     result = [userid]
-    if client is not None and client in claims['resource_access']:
-        return result + ['%s' % role for role in
-                claims['resource_access'][client]['roles']]
+    if client is not None and client in claims.get("resource_access", {}):
+        return result + [
+            "%s" % role for role in claims["resource_access"][client]["roles"]
+        ]
     else:
         return result
 
 
-def create_jwt_authentication_policy(config, private_key=None, public_key=None,
-                                     algorithm=None, expiration=None, leeway=None,
-                                     http_header=None, auth_type=None, callback=None, json_encoder=None,
-                                     audience=None,):
+def create_jwt_authentication_policy(
+    config,
+    private_key=None,
+    public_key=None,
+    algorithm=None,
+    expiration=None,
+    leeway=None,
+    http_header=None,
+    auth_type=None,
+    callback=None,
+    json_encoder=None,
+    audience=None,
+):
     settings = config.get_settings()
-    private_key = private_key or settings.get('jwt.private_key')
-    algorithm = settings.get('jwt.algorithm') or algorithm or 'RS256'
-    if not algorithm.startswith('HS'):
-        public_key = public_key or settings.get('jwt.public_key')
+    private_key = private_key or settings.get("jwt.private_key")
+    algorithm = settings.get("jwt.algorithm") or algorithm or "RS256"
+    if not algorithm.startswith("HS"):
+        public_key = public_key or settings.get("jwt.public_key")
     else:
         public_key = None
-    if expiration is None and 'jwt.expiration' in settings:
-        expiration = int(settings.get('jwt.expiration'))
-    leeway = int(settings.get('jwt.leeway', 0)) if leeway is None else leeway
-    http_header = settings.get('jwt.http_header') or http_header or 'Authorization'
-    if http_header.lower() == 'authorization':
-        auth_type = settings.get('jwt.auth_type') or auth_type or 'JWT'
+    if expiration is None and "jwt.expiration" in settings:
+        expiration = int(settings.get("jwt.expiration"))
+    leeway = int(settings.get("jwt.leeway", 0)) if leeway is None else leeway
+    http_header = settings.get("jwt.http_header") or http_header or "Authorization"
+    if http_header.lower() == "authorization":
+        auth_type = settings.get("jwt.auth_type") or auth_type or "JWT"
     else:
         auth_type = auth_type
     return JWTAuthenticationPolicy(
@@ -55,34 +66,55 @@ def create_jwt_authentication_policy(config, private_key=None, public_key=None,
         auth_type=auth_type,
         callback=callback,
         json_encoder=json_encoder,
-        audience=audience)
+        audience=audience,
+    )
 
 
-def set_jwt_authentication_policy(config, private_key=None, public_key=None,
-                                  algorithm=None, expiration=None, leeway=None,
-                                  http_header=None, auth_type=None, callback=None, json_encoder=None,
-                                  audience=None,):
+def set_jwt_authentication_policy(
+    config,
+    private_key=None,
+    public_key=None,
+    algorithm=None,
+    expiration=None,
+    leeway=None,
+    http_header=None,
+    auth_type=None,
+    callback=None,
+    json_encoder=None,
+    audience=None,
+):
     policy = create_jwt_authentication_policy(
-        config, private_key, public_key,
-        algorithm, expiration, leeway,
-        http_header, auth_type, callback, json_encoder, audience)
+        config,
+        private_key,
+        public_key,
+        algorithm,
+        expiration,
+        leeway,
+        http_header,
+        auth_type,
+        callback,
+        json_encoder,
+        audience,
+    )
 
-    def request_create_token(request, principal, expiration=None, audience=None, **claims):
+    def request_create_token(
+        request, principal, expiration=None, audience=None, **claims
+    ):
         return policy.create_token(principal, expiration, audience, **claims)
 
     def request_claims(request):
         return policy.get_claims(request)
 
     config.set_authentication_policy(policy)
-    config.add_request_method(request_create_token, 'create_jwt_token')
-    config.add_request_method(request_claims, 'jwt_claims', reify=True)
+    config.add_request_method(request_create_token, "create_jwt_token")
+    config.add_request_method(request_claims, "jwt_claims", reify=True)
 
 
 def set_keycloak_authentication_policy(config):
     settings = config.get_settings()
-    realm = settings.get('keycloak.realm', 'master')
-    auth_server = settings.get('keycloak.auth_server') or ''
-    resource = settings.get('keycloak.resource', '')
+    realm = settings.get("keycloak.realm", "master")
+    auth_server = settings.get("keycloak.auth_server") or ""
+    resource = settings.get("keycloak.resource", "")
 
     def keycloak_conf(request):
         return {
@@ -91,20 +123,37 @@ def set_keycloak_authentication_policy(config):
             "ssl-required": "external",
             "resource": resource,
             "public-client": True,
-            "enable-cors": True
+            "enable-cors": True,
         }
-    config.add_view(keycloak_conf,
-                    route_name="keycloak.json",
-                    renderer='json')
 
-    config.add_route('keycloak.json', '/keycloak.json')
+    config.add_view(keycloak_conf, route_name="keycloak.json", renderer="json")
 
-    # Enable JWT authentication.
-    config.set_jwt_authentication_policy(
-        'secret',
-        algorithm='HS256',
-        auth_type='Bearer',
-        http_header="Authorization",
-        callback=add_role_principals,
-        audience=resource
+    config.add_route("keycloak.json", "/keycloak.json")
+
+    # Accept tokens issued and signed by the Keycloak realm. The issuer is the realm's
+    # URL, as Keycloak puts it in the "iss" claim; without it no token can be verified.
+    issuer = settings.get("keycloak.issuer") or settings.get(
+        "multiauth.policy.keycloak.issuer"
     )
+    if not issuer:
+        raise ConfigurationError(
+            "Set keycloak.issuer (or multiauth.policy.keycloak.issuer) to the Keycloak "
+            "realm URL, e.g. https://sso.example.com/realms/master"
+        )
+    algorithms = aslist(settings.get("keycloak.algorithms", ""))
+    try:
+        policy = KeycloakAuthenticationPolicy(
+            issuer,
+            audience=resource or None,
+            leeway=int(settings.get("jwt.leeway", 0)),
+            callback=add_role_principals,
+            algorithms=algorithms or None,
+        )
+    except ValueError as e:
+        raise ConfigurationError(f"keycloak.algorithms: {e}") from e
+
+    def request_claims(request):
+        return policy.get_claims(request)
+
+    config.set_authentication_policy(policy)
+    config.add_request_method(request_claims, "jwt_claims", reify=True)
