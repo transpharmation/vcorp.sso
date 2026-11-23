@@ -1,5 +1,6 @@
 0.3.0
 
+- Requires PyJWT[crypto]>=2.15, whose key cache survives a failed refresh.
 - Keycloak authentication verifies tokens against the realm's published signing keys,
   and checks expiry and issuer (and audience, when keycloak.resource is set).
   Requires keycloak.issuer or multiauth.policy.keycloak.issuer.

@@ -19,7 +19,7 @@ classifiers = [
 requires-python = ">=3.9"
 dependencies = [
     "pyramid",
-    "PyJWT[crypto]>=2.8"
+    "PyJWT[crypto]>=2.15"
 ]
 
 [project.optional-dependencies]

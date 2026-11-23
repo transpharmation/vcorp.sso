@@ -1,8 +1,11 @@
 """Bearer tokens are accepted only when the Keycloak realm issued and signed them."""
 
 import datetime
+import io
 import json
 import time
+import urllib.error
+import urllib.request
 
 import jwt
 import pytest
@@ -245,3 +248,26 @@ def test_an_rsa_signing_key_alone_verifies_its_tokens():
 def test_fetching_the_realm_keys_gives_up_quickly():
     """A stalled Keycloak mustn't hold requests for PyJWT's default 30 seconds."""
     assert KeycloakAuthenticationPolicy(ISSUER).jwks_client.timeout == 5
+
+
+def test_a_failed_refresh_keeps_the_keys_already_fetched(monkeypatch):
+    """A Keycloak outage while refreshing must not lock out tokens signed by known keys.
+
+    Uses PyJWT's real key client; only the network below it is replaced.
+    """
+    published = json.dumps({"keys": [jwk(REALM_KEY, "realm")]}).encode()
+    answers = [io.BytesIO(published)]  # the first fetch works, any later one fails
+
+    class Network:
+        def open(self, request, timeout=None):
+            if not answers:
+                raise urllib.error.URLError("Keycloak is unreachable")
+            return answers.pop(0)
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Network())
+    policy = KeycloakAuthenticationPolicy(ISSUER)
+    assert claims(policy, token())["preferred_username"] == "alice"
+    assert (
+        claims(policy, token(key=NEW_KEY, kid="new")) == {}
+    )  # forces a failed refresh
+    assert claims(policy, token())["preferred_username"] == "alice"
