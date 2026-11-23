@@ -37,5 +37,11 @@ jobs:
         with:
           python-version: "3.x"
 
+      # pyright resolves imports from .venv (see pyrightconfig.json)
+      - name: Create virtualenv and install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e ".[tests]"
+
       - name: Run pre-commit hooks
         uses: pre-commit/action@v3.0.1
