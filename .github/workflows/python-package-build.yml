@@ -13,7 +13,7 @@ on:
     types: [published]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release-build:
@@ -31,6 +31,11 @@ jobs:
           # NOTE: put your own distribution build steps here.
           python -m pip install build
           python -m build
+
+      - name: Attach distributions to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/* --clobber
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
