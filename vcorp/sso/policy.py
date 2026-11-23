@@ -133,8 +133,7 @@ class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
 
     def remember(self, request, principal, **kw):
         warnings.warn(
-            "JWT tokens need to be returned by an API. Using remember() "
-            "has no effect.",
+            "JWT tokens need to be returned by an API. Using remember() has no effect.",
             stacklevel=3,
         )
         return []
