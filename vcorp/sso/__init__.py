@@ -1,5 +1,5 @@
-from pyramid.view import view_config
-from .policy import JWTAuthenticationPolicy
+from pyramid.exceptions import ConfigurationError
+from .policy import JWTAuthenticationPolicy, KeycloakAuthenticationPolicy
 
 
 def includeme(config):
@@ -19,7 +19,7 @@ def add_role_principals(userid, request):
     client = settings.get('keycloak.client', None)
     # Initialize with an "Owner" role
     result = [userid]
-    if client is not None and client in claims['resource_access']:
+    if client is not None and client in claims.get('resource_access', {}):
         return result + ['%s' % role for role in
                 claims['resource_access'][client]['roles']]
     else:
@@ -99,12 +99,22 @@ def set_keycloak_authentication_policy(config):
 
     config.add_route('keycloak.json', '/keycloak.json')
 
-    # Enable JWT authentication.
-    config.set_jwt_authentication_policy(
-        'secret',
-        algorithm='HS256',
-        auth_type='Bearer',
-        http_header="Authorization",
-        callback=add_role_principals,
-        audience=resource
-    )
+    # Accept tokens issued and signed by the Keycloak realm. The issuer is the realm's
+    # URL, as Keycloak puts it in the "iss" claim; without it no token can be verified.
+    issuer = (settings.get('keycloak.issuer')
+              or settings.get('multiauth.policy.keycloak.issuer'))
+    if not issuer:
+        raise ConfigurationError(
+            'Set keycloak.issuer (or multiauth.policy.keycloak.issuer) to the Keycloak '
+            'realm URL, e.g. https://sso.example.com/realms/master')
+    policy = KeycloakAuthenticationPolicy(
+        issuer,
+        audience=resource or None,
+        leeway=int(settings.get('jwt.leeway', 0)),
+        callback=add_role_principals)
+
+    def request_claims(request):
+        return policy.get_claims(request)
+
+    config.set_authentication_policy(policy)
+    config.add_request_method(request_claims, 'jwt_claims', reify=True)

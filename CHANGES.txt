@@ -1,3 +1,10 @@
+0.3.0
+
+- Keycloak authentication verifies tokens against the realm's published signing keys,
+  and checks expiry and issuer (and audience, when keycloak.resource is set).
+  Requires keycloak.issuer or multiauth.policy.keycloak.issuer.
+- The shared-secret JWT policy verifies token signatures.
+
 0.1
 
 Initial Release
