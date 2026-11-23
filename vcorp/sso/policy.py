@@ -8,16 +8,26 @@ from pyramid.authentication import CallbackAuthenticationPolicy
 from pyramid.interfaces import IAuthenticationPolicy
 
 
-log = logging.getLogger('pyramid_jwt')
+log = logging.getLogger("pyramid_jwt")
 marker = []
 
 
 @implementer(IAuthenticationPolicy)
 class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
-    def __init__(self, private_key, public_key=None, algorithm='HS512',
-                 leeway=0, expiration=None, default_claims=None,
-                 http_header='Authorization', auth_type='JWT',
-                 callback=None, json_encoder=None, audience=None,):
+    def __init__(
+        self,
+        private_key,
+        public_key=None,
+        algorithm="HS512",
+        leeway=0,
+        expiration=None,
+        default_claims=None,
+        http_header="Authorization",
+        auth_type="JWT",
+        callback=None,
+        json_encoder=None,
+        audience=None,
+    ):
         self.private_key = private_key
         self.public_key = public_key if public_key is not None else private_key
         self.algorithm = algorithm
@@ -41,24 +51,28 @@ class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
     def create_token(self, principal, expiration=None, audience=None, **claims):
         payload = self.default_claims.copy()
         payload.update(claims)
-        payload['sub'] = principal
-        payload['iat'] = iat = datetime.datetime.utcnow()
+        payload["sub"] = principal
+        payload["iat"] = iat = datetime.datetime.utcnow()
         expiration = expiration or self.expiration
         audience = audience or self.audience
         if expiration:
             if not isinstance(expiration, datetime.timedelta):
                 expiration = datetime.timedelta(seconds=expiration)
-            payload['exp'] = iat + expiration
+            payload["exp"] = iat + expiration
         if audience:
-            payload['aud'] = audience
-        token = jwt.encode(payload, self.private_key,
-                           algorithm=self.algorithm, json_encoder=self.json_encoder)
+            payload["aud"] = audience
+        token = jwt.encode(
+            payload,
+            self.private_key,
+            algorithm=self.algorithm,
+            json_encoder=self.json_encoder,
+        )
         if not isinstance(token, str):  # Python3 unicode madness
-            token = token.decode('ascii')
+            token = token.decode("ascii")
         return token
 
     def get_claims(self, request):
-        if self.http_header == 'Authorization':
+        if self.http_header == "Authorization":
             try:
                 if request.authorization is None:
                     return {}
@@ -72,13 +86,12 @@ class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
 
         if not token:
             return {}
-        if token.startswith('Bearer ') or token.startswith('bearer '):
-            token = token[len('bearer '):]
+        if token.startswith("Bearer ") or token.startswith("bearer "):
+            token = token[len("bearer ") :]
         try:
             return self.decode(token)
         except jwt.PyJWTError as e:
-            log.warning('Invalid JWT token from %s: %s',
-                        request.remote_addr, e)
+            log.warning("Invalid JWT token from %s: %s", request.remote_addr, e)
             return {}
 
     def decode(self, token):
@@ -87,28 +100,32 @@ class JWTAuthenticationPolicy(CallbackAuthenticationPolicy):
         Raises:
             jwt.PyJWTError: If the token is not valid.
         """
-        return jwt.decode(token,
-                          self.public_key,
-                          algorithms=[self.algorithm],
-                          leeway=self.leeway,
-                          audience=self.audience,
-                          options={"verify_aud": self.audience is not None})
+        return jwt.decode(
+            token,
+            self.public_key,
+            algorithms=[self.algorithm],
+            leeway=self.leeway,
+            audience=self.audience,
+            options={"verify_aud": self.audience is not None},
+        )
 
     def unauthenticated_userid(self, request):
-        return request.jwt_claims.get('preferred_username')
+        return request.jwt_claims.get("preferred_username")
 
     def remember(self, request, principal, **kw):
         warnings.warn(
-            'JWT tokens need to be returned by an API. Using remember() '
-            'has no effect.',
-            stacklevel=3)
+            "JWT tokens need to be returned by an API. Using remember() "
+            "has no effect.",
+            stacklevel=3,
+        )
         return []
 
     def forget(self, request):
         warnings.warn(
-            'JWT tokens are managed by API (users) manually. Using forget() '
-            'has no effect.',
-            stacklevel=3)
+            "JWT tokens are managed by API (users) manually. Using forget() "
+            "has no effect.",
+            stacklevel=3,
+        )
         return []
 
 
@@ -121,27 +138,39 @@ class KeycloakAuthenticationPolicy(JWTAuthenticationPolicy):
     nobody.
     """
 
-    ALGORITHMS = ['RS256']
+    ALGORITHMS = ["RS256"]
 
-    def __init__(self, issuer, audience=None, leeway=0, callback=None,
-                 jwks_client=None):
-        super().__init__(None, algorithm='RS256', leeway=leeway,
-                         http_header='Authorization', auth_type='Bearer',
-                         callback=callback, audience=audience)
-        self.issuer = issuer.rstrip('/')
+    def __init__(
+        self, issuer, audience=None, leeway=0, callback=None, jwks_client=None
+    ):
+        super().__init__(
+            None,
+            algorithm="RS256",
+            leeway=leeway,
+            http_header="Authorization",
+            auth_type="Bearer",
+            callback=callback,
+            audience=audience,
+        )
+        self.issuer = issuer.rstrip("/")
         self.jwks_client = jwks_client or PyJWKClient(
-            f'{self.issuer}/protocol/openid-connect/certs', cache_keys=True)
+            f"{self.issuer}/protocol/openid-connect/certs", cache_keys=True
+        )
 
     def create_token(self, principal, expiration=None, audience=None, **claims):
-        raise NotImplementedError('Keycloak issues the tokens this policy accepts')
+        raise NotImplementedError("Keycloak issues the tokens this policy accepts")
 
     def decode(self, token):
         key = self.jwks_client.get_signing_key_from_jwt(token).key
-        return jwt.decode(token,
-                          key,
-                          algorithms=self.ALGORITHMS,
-                          issuer=self.issuer,
-                          leeway=self.leeway,
-                          audience=self.audience,
-                          options={"require": ["exp", "iss"],
-                                   "verify_aud": self.audience is not None})
+        return jwt.decode(
+            token,
+            key,
+            algorithms=self.ALGORITHMS,
+            issuer=self.issuer,
+            leeway=self.leeway,
+            audience=self.audience,
+            options={
+                "require": ["exp", "iss"],
+                "verify_aud": self.audience is not None,
+            },
+        )
