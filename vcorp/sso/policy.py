@@ -193,6 +193,7 @@ class KeycloakAuthenticationPolicy(JWTAuthenticationPolicy):
             f"{self.issuer}/protocol/openid-connect/certs",
             cache_jwk_set=True,
             lifespan=keys_lifespan,
+            timeout=5,  # seconds; a stalled Keycloak mustn't hold a request for long
         )
         self.min_refresh_interval = min_refresh_interval
         self._last_refresh = None

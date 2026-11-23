@@ -240,3 +240,8 @@ def test_an_rsa_signing_key_alone_verifies_its_tokens():
     )
     forged = jwt.encode({"sub": "alice"}, OTHER_KEY, algorithm="RS256")
     assert claims(policy, forged, auth_type="JWT") == {}
+
+
+def test_fetching_the_realm_keys_gives_up_quickly():
+    """A stalled Keycloak mustn't hold requests for PyJWT's default 30 seconds."""
+    assert KeycloakAuthenticationPolicy(ISSUER).jwks_client.timeout == 5
