@@ -49,13 +49,18 @@ def create_jwt_authentication_policy(
     else:
         public_key = None
     if expiration is None and "jwt.expiration" in settings:
-        expiration = int(settings.get("jwt.expiration"))
-    leeway = int(settings.get("jwt.leeway", 0)) if leeway is None else leeway
+        try:
+            expiration = int(settings.get("jwt.expiration"))
+        except (TypeError, ValueError) as e:
+            raise ConfigurationError(f"jwt.expiration: {e}") from e
+    if leeway is None:
+        try:
+            leeway = int(settings.get("jwt.leeway", 0))
+        except (TypeError, ValueError) as e:
+            raise ConfigurationError(f"jwt.leeway: {e}") from e
     http_header = settings.get("jwt.http_header") or http_header or "Authorization"
     if http_header.lower() == "authorization":
         auth_type = settings.get("jwt.auth_type") or auth_type or "JWT"
-    else:
-        auth_type = auth_type
     return JWTAuthenticationPolicy(
         private_key=private_key,
         public_key=public_key,
@@ -63,7 +68,7 @@ def create_jwt_authentication_policy(
         leeway=leeway,
         expiration=expiration,
         http_header=http_header,
-        auth_type=auth_type,
+        auth_type=auth_type or "JWT",
         callback=callback,
         json_encoder=json_encoder,
         audience=audience,
@@ -142,10 +147,14 @@ def set_keycloak_authentication_policy(config):
         )
     algorithms = aslist(settings.get("keycloak.algorithms", ""))
     try:
+        leeway = int(settings.get("jwt.leeway", 0))
+    except (TypeError, ValueError) as e:
+        raise ConfigurationError(f"jwt.leeway: {e}") from e
+    try:
         policy = KeycloakAuthenticationPolicy(
             issuer,
             audience=resource or None,
-            leeway=int(settings.get("jwt.leeway", 0)),
+            leeway=leeway,
             callback=add_role_principals,
             algorithms=algorithms or None,
         )

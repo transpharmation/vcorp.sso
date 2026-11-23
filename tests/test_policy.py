@@ -100,7 +100,9 @@ def test_a_token_the_realm_signed_is_accepted(policy):
 
 
 def test_an_unsigned_token_is_refused(policy):
-    assert claims(policy, token(key=None, algorithm="none")) == {}
+    assert (
+        claims(policy, token(key=None, algorithm="none")) == {}  # pyright: ignore[reportArgumentType]
+    )
 
 
 def test_a_token_signed_by_another_key_is_refused(policy):
@@ -150,6 +152,7 @@ def test_the_issuer_is_read_from_the_settings():
     config.include("vcorp.sso")
     config.set_keycloak_authentication_policy()
     config.commit()
+    assert config.registry is not None
     policy = config.registry.getUtility(IAuthenticationPolicy)
     assert isinstance(policy, KeycloakAuthenticationPolicy)
     assert policy.issuer == ISSUER
@@ -163,7 +166,7 @@ def test_the_shared_secret_policy_verifies_signatures():
     assert claims(policy, forged) == {}
 
 
-def test_tokens_are_signed_with_rs256_unless_configured_otherwise(policy):
+def test_only_configured_signing_algorithms_are_accepted(policy):
     assert claims(policy, token(algorithm="RS512")) == {}
     policy = KeycloakAuthenticationPolicy(
         ISSUER, algorithms=["RS256", "RS512"], jwks_client=RealmKeys()
@@ -180,6 +183,7 @@ def test_the_algorithms_are_read_from_the_settings():
     config.include("vcorp.sso")
     config.set_keycloak_authentication_policy()
     config.commit()
+    assert config.registry is not None
     policy = config.registry.getUtility(IAuthenticationPolicy)
     assert policy.algorithms == ["RS256", "RS512"]
 
@@ -248,6 +252,21 @@ def test_an_rsa_signing_key_alone_verifies_its_tokens():
 def test_fetching_the_realm_keys_gives_up_quickly():
     """A stalled Keycloak mustn't hold requests for PyJWT's default 30 seconds."""
     assert KeycloakAuthenticationPolicy(ISSUER).jwks_client.timeout == 5
+
+
+def test_a_malformed_keys_response_is_refused(monkeypatch):
+    """A JWKS endpoint answering non-JSON must fail closed, not raise.
+
+    PyJWT doesn't wrap JSONDecodeError as a PyJWTError; the policy must.
+    """
+
+    class Endpoint:
+        def open(self, request, timeout=None):
+            return io.BytesIO(b"<html>Bad Gateway</html>")
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Endpoint())
+    policy = KeycloakAuthenticationPolicy(ISSUER)
+    assert claims(policy, token()) == {}
 
 
 def test_a_failed_refresh_keeps_the_keys_already_fetched(monkeypatch):

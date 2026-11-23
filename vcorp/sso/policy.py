@@ -205,12 +205,25 @@ class KeycloakAuthenticationPolicy(JWTAuthenticationPolicy):
         """Return the realm's public key that signed ``token``.
 
         Raises:
-            jwt.PyJWTError: If the realm publishes no such key.
+            jwt.PyJWTError: If the realm's keys can't be fetched or it
+                publishes no such key.
         """
         kid = jwt.get_unverified_header(token).get("kid")
-        key = self._find_key(self.jwks_client.get_signing_keys(), kid)
-        if key is None and self._may_refresh():
-            key = self._find_key(self.jwks_client.get_signing_keys(refresh=True), kid)
+        try:
+            key = self._find_key(self.jwks_client.get_signing_keys(), kid)
+            if key is None and self._may_refresh():
+                key = self._find_key(
+                    self.jwks_client.get_signing_keys(refresh=True), kid
+                )
+        except jwt.PyJWTError:
+            raise
+        except Exception as e:
+            # PyJWT doesn't wrap every failure below the HTTP layer (e.g. a
+            # non-JSON JWKS body raises JSONDecodeError); anything that stops
+            # the keys being read must still fail closed as a PyJWTError.
+            raise jwt.PyJWKClientError(
+                f"Unable to fetch the realm's signing keys: {e}"
+            ) from e
         if key is None:
             raise jwt.PyJWKClientError(
                 f'Unable to find a signing key that matches: "{kid}"'

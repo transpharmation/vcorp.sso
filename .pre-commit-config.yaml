@@ -3,7 +3,8 @@ repos:
   # Ruff: formatter + linter
   # -------------------------
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.4   # <-- pin to latest Ruff version
+    # Pinned; review the Ruff changelog before bumping.
+    rev: v0.6.4
     hooks:
       - id: ruff
         name: Ruff Lint (with autofix)
@@ -16,7 +17,8 @@ repos:
   # Pyright: static typing
   # -------------------------
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.386   # <-- pin to latest Pyright version
+    # Pinned; review the Pyright changelog before bumping.
+    rev: v1.1.386
     hooks:
       - id: pyright
         name: Pyright type checking
